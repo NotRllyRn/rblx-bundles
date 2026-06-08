@@ -3,7 +3,7 @@
 --// main index
 
 --// perform game check... no game here in example
-if game.GameId ~= 0 then
+if game.GameId == 0 then
     game:GetService("Players").LocalPlayer:Kick(`This script does not support this game: {game.GameId}`)
 end
 

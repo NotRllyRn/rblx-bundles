@@ -1,0 +1,10 @@
+{
+  "aliases": {
+    "helpers": "helpers",
+    "data": "src/shared/Data",
+    "framework": "src/shared/RAFE",
+    "server": "src/server",
+    "shared": "src/shared"
+  },
+  "languageMode": "nonstrict"
+}

@@ -28,29 +28,36 @@ local module = require ( -- comment
 
         self.assertEqual([call.requested_path for call in calls], ["./module"])
 
-    def test_accepts_repo_root_style_requires(self) -> None:
+    def test_accepts_at_root_and_plain_relative_requires(self) -> None:
         source = """
-local a = require("bundles/Example/module")
-local b = require("helpers/shared/tool")
+local a = require("@helpers/shared/tool")
+local b = require("module")
+local c = require("somefolder/file")
 """
         calls = package_bundle.find_require_calls(source, "main.luau")
 
         self.assertEqual(
             [call.requested_path for call in calls],
-            ["bundles/Example/module", "helpers/shared/tool"],
+            ["@helpers/shared/tool", "module", "somefolder/file"],
         )
 
     def test_rejects_dynamic_require(self) -> None:
         with self.assertRaisesRegex(
-            package_bundle.PackagingError, "quoted relative path"
+            package_bundle.PackagingError, "quoted path string"
         ):
             package_bundle.find_require_calls("require(module_name)", "main.luau")
 
-    def test_rejects_non_relative_require(self) -> None:
+    def test_rejects_absolute_require(self) -> None:
         with self.assertRaisesRegex(
             package_bundle.PackagingError, "must be relative"
         ):
-            package_bundle.find_require_calls('require("module")', "main.luau")
+            package_bundle.find_require_calls('require("/module")', "main.luau")
+
+    def test_rejects_at_slash_require(self) -> None:
+        with self.assertRaisesRegex(
+            package_bundle.PackagingError, "must be relative"
+        ):
+            package_bundle.find_require_calls('require("@/module")', "main.luau")
 
 
 class BuilderTests(unittest.TestCase):
@@ -75,7 +82,7 @@ class BuilderTests(unittest.TestCase):
     def test_collects_nested_dependencies_and_rewrites_requires(self) -> None:
         entry = self.write(
             "main.luau",
-            'local value = require("./modules/value")\nreturn value\n',
+            'local value = require("modules/value")\nreturn value\n',
         )
         self.write(
             "modules/value.luau",
@@ -126,7 +133,7 @@ class BuilderTests(unittest.TestCase):
         entry = bundle_root / "main.luau"
         entry.parent.mkdir(parents=True, exist_ok=True)
         entry.write_text(
-            'local module = require("bundles/Example/modules/value")\nreturn module\n',
+            'local module = require("@bundles/Example/modules/value")\nreturn module\n',
             encoding="utf-8",
         )
         (bundle_root / "modules").mkdir(parents=True, exist_ok=True)
@@ -140,12 +147,12 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(entry_id, "main.luau")
         self.assertIn('__bundle_require("modules/value.luau")', rewritten)
 
-    def test_rejects_repo_root_style_path_outside_bundle(self) -> None:
+    def test_collects_repo_root_style_dependency_outside_bundle(self) -> None:
         repo_root = self.bundle / "repo"
         bundle_root = repo_root / "bundles" / "Example"
         entry = bundle_root / "main.luau"
         entry.parent.mkdir(parents=True, exist_ok=True)
-        entry.write_text('return require("helpers/shared/tool")\n', encoding="utf-8")
+        entry.write_text('return require("@helpers/shared/tool")\n', encoding="utf-8")
         (repo_root / "helpers" / "shared").mkdir(parents=True, exist_ok=True)
         (repo_root / "helpers" / "shared" / "tool.luau").write_text(
             "return 0\n",
@@ -153,10 +160,13 @@ class BuilderTests(unittest.TestCase):
         )
         self.set_repo_root(repo_root)
 
-        with self.assertRaisesRegex(
-            package_bundle.PackagingError, "outside the bundle"
-        ):
-            package_bundle.BundleBuilder(bundle_root).collect(entry)
+        builder = package_bundle.BundleBuilder(bundle_root)
+        entry_id = builder.collect(entry)
+        rewritten = package_bundle.rewrite_requires(builder.modules["main.luau"])
+
+        self.assertEqual(entry_id, "main.luau")
+        self.assertIn("helpers/shared/tool.luau", builder.modules)
+        self.assertIn('__bundle_require("helpers/shared/tool.luau")', rewritten)
 
     def test_rejects_missing_repo_root_style_dependency(self) -> None:
         repo_root = self.bundle / "repo"
@@ -164,7 +174,7 @@ class BuilderTests(unittest.TestCase):
         entry = bundle_root / "main.luau"
         entry.parent.mkdir(parents=True, exist_ok=True)
         entry.write_text(
-            'return require("bundles/Example/shared/missing")\n',
+            'return require("@bundles/Example/shared/missing")\n',
             encoding="utf-8",
         )
         self.set_repo_root(repo_root)
@@ -173,6 +183,33 @@ class BuilderTests(unittest.TestCase):
             package_bundle.PackagingError, "does not exist"
         ):
             package_bundle.BundleBuilder(bundle_root).collect(entry)
+
+    def test_rejects_repo_root_style_path_outside_repository(self) -> None:
+        repo_root = self.bundle / "repo"
+        bundle_root = repo_root / "bundles" / "Example"
+        entry = bundle_root / "main.luau"
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        entry.write_text('return require("@/outside")\n', encoding="utf-8")
+        self.set_repo_root(repo_root)
+
+        with self.assertRaisesRegex(
+            package_bundle.PackagingError, "must be relative"
+        ):
+            package_bundle.find_require_calls(entry.read_text(encoding="utf-8"), "main.luau")
+
+    def test_collects_plain_relative_path_without_dot_prefix(self) -> None:
+        entry = self.write(
+            "main.luau",
+            'local value = require("modules/value")\nreturn value\n',
+        )
+        self.write("modules/value.luau", "return 0\n")
+
+        builder = package_bundle.BundleBuilder(self.bundle)
+        entry_id = builder.collect(entry)
+        rewritten = package_bundle.rewrite_requires(builder.modules["main.luau"])
+
+        self.assertEqual(entry_id, "main.luau")
+        self.assertIn('__bundle_require("modules/value.luau")', rewritten)
 
 
 class TemplateTests(unittest.TestCase):

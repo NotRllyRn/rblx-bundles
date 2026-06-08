@@ -42,14 +42,14 @@ class Module:
 
 
 def is_relative_require(requested_path: str) -> bool:
-    return requested_path.startswith("./") or requested_path.startswith("../")
+    return bool(requested_path) and not requested_path.startswith(("@", "/"))
 
 
 def is_repo_root_require(requested_path: str) -> bool:
     return (
-        "/" in requested_path
-        and not requested_path.startswith("/")
-        and not is_relative_require(requested_path)
+        requested_path.startswith("@")
+        and len(requested_path) > 1
+        and not requested_path.startswith("@/")
     )
 
 
@@ -181,7 +181,7 @@ def find_require_calls(source: str, display_path: str) -> list[RequireCall]:
             if argument >= len(source) or source[argument] not in ("\"", "'"):
                 line = source.count("\n", 0, cursor) + 1
                 raise PackagingError(
-                    f"{display_path}:{line}: require must use a quoted relative path"
+                    f"{display_path}:{line}: require must use a quoted path string"
                 )
 
             requested_path, string_end = parse_path_string(source, argument)
@@ -199,7 +199,7 @@ def find_require_calls(source: str, display_path: str) -> list[RequireCall]:
                 line = source.count("\n", 0, cursor) + 1
                 raise PackagingError(
                     f"{display_path}:{line}: require path must be relative "
-                    f"(./ or ../) or repo-root-style (folder/...)"
+                    f"(plain, ./, or ../) or repo-root-style (@path/to/file)"
                 )
 
             calls.append(RequireCall(cursor, close_paren + 1, requested_path))
@@ -229,13 +229,26 @@ class BundleBuilder:
         self.visiting: list[str] = []
 
     def module_id(self, path: Path) -> str:
-        return path.relative_to(self.bundle_root).as_posix()
+        try:
+            return path.relative_to(self.bundle_root).as_posix()
+        except ValueError:
+            return path.relative_to(REPO_ROOT).as_posix()
 
     def resolve_require(self, requiring_path: Path, requested_path: str) -> Path:
         if is_relative_require(requested_path):
             candidate = requiring_path.parent / requested_path
+            allowed_root = self.bundle_root
+            containment_error = (
+                f"{self.module_id(requiring_path)}: require path resolves outside "
+                f"the bundle being packaged: {requested_path}"
+            )
         elif is_repo_root_require(requested_path):
-            candidate = REPO_ROOT / requested_path
+            candidate = REPO_ROOT / requested_path[1:]
+            allowed_root = REPO_ROOT
+            containment_error = (
+                f"{self.module_id(requiring_path)}: require path resolves outside "
+                f"the repository root: {requested_path}"
+            )
         else:
             raise PackagingError(
                 f"{self.module_id(requiring_path)}: unsupported require path: "
@@ -247,13 +260,9 @@ class BundleBuilder:
         candidate = candidate.resolve()
 
         try:
-            candidate.relative_to(self.bundle_root)
+            candidate.relative_to(allowed_root)
         except ValueError as error:
-            raise PackagingError(
-                f"{self.module_id(requiring_path)}: require path resolves outside "
-                f"the bundle being packaged: "
-                f"{requested_path}"
-            ) from error
+            raise PackagingError(containment_error) from error
 
         if not candidate.is_file():
             raise PackagingError(
