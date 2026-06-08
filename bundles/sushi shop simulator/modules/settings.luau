@@ -1,0 +1,1 @@
+--// settings for quickly changing values for the program
