@@ -41,6 +41,18 @@ class Module:
     requires: list[tuple[RequireCall, str]]
 
 
+def is_relative_require(requested_path: str) -> bool:
+    return requested_path.startswith("./") or requested_path.startswith("../")
+
+
+def is_repo_root_require(requested_path: str) -> bool:
+    return (
+        "/" in requested_path
+        and not requested_path.startswith("/")
+        and not is_relative_require(requested_path)
+    )
+
+
 def long_bracket_level(source: str, index: int) -> int | None:
     if index >= len(source) or source[index] != "[":
         return None
@@ -181,12 +193,13 @@ def find_require_calls(source: str, display_path: str) -> list[RequireCall]:
                 )
 
             if not (
-                requested_path.startswith("./")
-                or requested_path.startswith("../")
+                is_relative_require(requested_path)
+                or is_repo_root_require(requested_path)
             ):
                 line = source.count("\n", 0, cursor) + 1
                 raise PackagingError(
-                    f"{display_path}:{line}: require path must start with ./ or ../"
+                    f"{display_path}:{line}: require path must be relative "
+                    f"(./ or ../) or repo-root-style (folder/...)"
                 )
 
             calls.append(RequireCall(cursor, close_paren + 1, requested_path))
@@ -219,7 +232,16 @@ class BundleBuilder:
         return path.relative_to(self.bundle_root).as_posix()
 
     def resolve_require(self, requiring_path: Path, requested_path: str) -> Path:
-        candidate = requiring_path.parent / requested_path
+        if is_relative_require(requested_path):
+            candidate = requiring_path.parent / requested_path
+        elif is_repo_root_require(requested_path):
+            candidate = REPO_ROOT / requested_path
+        else:
+            raise PackagingError(
+                f"{self.module_id(requiring_path)}: unsupported require path: "
+                f"{requested_path}"
+            )
+
         if candidate.suffix == "":
             candidate = candidate.with_suffix(".luau")
         candidate = candidate.resolve()
@@ -228,7 +250,8 @@ class BundleBuilder:
             candidate.relative_to(self.bundle_root)
         except ValueError as error:
             raise PackagingError(
-                f"{self.module_id(requiring_path)}: require path escapes the bundle: "
+                f"{self.module_id(requiring_path)}: require path resolves outside "
+                f"the bundle being packaged: "
                 f"{requested_path}"
             ) from error
 
