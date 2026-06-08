@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 BUNDLES_DIR = REPO_ROOT / "bundles"
 OUTPUT_DIR = REPO_ROOT / "packaged-bundles"
-HELPER_PATH = REPO_ROOT / "main-helper.luau"
+HELPER_PATH = REPO_ROOT / "scripts/main-helper.luau"
 TEMPLATE_MARKERS = {
     "bundle_name": "--// ** DO NOT TOUCH ** IDENTIFIER: BUNDLE_NAME",
     "control_key": "--// ** DO NOT TOUCH ** IDENTIFIER: CONTROL_KEY",

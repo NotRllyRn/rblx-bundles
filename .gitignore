@@ -16,6 +16,17 @@ profile.svg
 # Time trace
 trace.json
 
-creator-docs/
+# Project specific output
 packaged-bundles/
-*.rbxlx
+
+# Roblox files
+*.rbxlx*
+*.rbxl*
+
+# script export folders
+*-scripts/
+*-objects/
+*-export/
+
+# macos things
+.DS_Store

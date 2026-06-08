@@ -1,0 +1,53 @@
+cook when the shop is open
+- need to clean dishes when there are no clean dishes
+clean dishes when the shop is closed
+need to buy materials when the materials run out
+rest when you run out of energy in the rest room
+
+cook stations and wash stations can be occupied so there needs to be checks before trying to work at a station
+- same goes for seats taken on the sofa for when rest is needed
+
+I also do not want to teleport so we need to use https://create.roblox.com/docs/en-us/reference/engine/classes/PathfindingService
+the path finidng service to move the character to the appropriate work stations and rest areas before completing the action
+
+for buying the materials, we can just fire remote events directly when the materials are needed
+
+Information on cook stations:
+these are the 4 cooking stations under
+Workspace/Game :
+• Workspace/Game/99938348
+• Workspace/Game/69890574
+• Workspace/Game/38770544
+•Workspace/Game/60203519
+They all share the same structure:
+• Base
+• Spawn
+• Spawn2
+• StandHere
+• Using
+• Level
+• CookingScript
+• ClickDetector
+Do not rely on the workstation number names staying consistent.
+Instead, make sure to verify the structure of the cook station to determine whether or not the model part is a workstation.
+cook stations also have a "Level" check that only allow you to use it if you are that minimum level in the cooking level.
+
+localplayer also has an attributes folder with values that you can read / connect to for functionality of the script
+
+Sinks to wash dishes are also under Workspace/Game:
+• Workspace/Game/Sink1
+• Workspace/Game/Sink2
+these names do not change
+they follow the same structure:
+• Base
+• StandHere
+• Using
+• SinkScript
+• ClickDetector
+
+attributes will be used to check what recipe is currently equipped, and wheter or not 
+
+under ReplicatedStorage.Settings, there is a folder for stock, which allows you to read the current stock values for everything we need to buy previous mentioned, along with their prices.
+
+the sofa for resting is approximately at -8.62709522, 35.5299988, -23.5437546. it's a model instance with the name "Model" and has a "MeshPart" and 2 Seat instances called "Sofa".
+Find the sofa on startup using this information. use seat:Sit() to sit in the chair once walking to it. Try each instance once if the other one is already occupied. use Seat.Occupant to check.

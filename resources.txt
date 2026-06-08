@@ -1,5 +1,5 @@
-Roblox documentation: https://github.com/Roblox/creator-docs/tree/main/
+Roblox documentation: https://github.com/Roblox/creator-docs
 - the folder for all the documentation is also in the "creator-docs" folder.
 Roblox website (same as Roblox Documentation): https://create.roblox.com/docs
-Unified Naming Convention: https://docs.sunc.su/
+Unified Naming Convention: https://github.com/sUNC-Utilities/docs.sunc.su
 Luau.org documenation: https://luau.org/getting-started/
