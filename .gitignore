@@ -1,3 +1,6 @@
+# Python bytecode
+__pycache__/
+
 # A fast, small, safe, gradually typed embeddable scripting language derived from Lua
 #
 # https://github.com/luau-lang/luau

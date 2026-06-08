@@ -1,0 +1,29 @@
+the goal of the game is to help the dying business not to go bankrupt.
+shop is open from 10AM to 11PM
+- there is a physical clock on the wall.
+at midnight there is an income statement for how the shop is doing.
+there are sushi counters. to start making sushi, click on the sushi counter.
+leveling up from experience will unlock recipes and better sushi
+making sushi results in dirty plates
+there is a sink where you can clean dirty plates
+clicking on the sink results in one dirty plate being turned into a clean plate.
+there is a store room that shows everyone our current supply of everything.
+the store room shows how much stock is left.
+there is a keymap like board showing what each emoji means to what material
+there is a "7 eleven deluxe" where we can re-stock if we are low on supplies
+the store allows you to purchase ingredients for sushi
+to purchase ingredients, you first need to contribute by washing or making sushi
+contributions will be deducted when purchasing ingredients
+you can rest in the staff room
+the printer shows the income statement for how the business is doing
+there is a computer in the staff room with a lot of functions
+handling advertisements to attract customers
+adjustments to hourly pay, tip and commission can be changed at the computer.
+working (washing dishes or making sushi) will make you tired
+resting (sitting in the staff room) will recharge your energy bar
+the sofa recovers energy the fastest for free
+there is a recipe book that you can sit on the associating chair to change your recipe
+you can also make coffee to restore energy faster only if there available coffee bags
+there is also a tip jar in the staff room, clicking the tip jar will claim the tips in it.
+employee of the day gives a tiny cash bonus at every midnight
+do not go bankrupt. you do not get paid if there is no/negative money in the bank
