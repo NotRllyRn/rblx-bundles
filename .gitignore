@@ -30,10 +30,3 @@ packaged-bundles/
 
 # macos things
 .DS_Store
-
-# vendors
-vendors/
-
-wax/
-creator-docs/
-docs.sunc.su/
