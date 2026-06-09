@@ -224,47 +224,21 @@ class BundleBuilder:
     def __init__(self, bundle_root: Path) -> None:
         self.bundle_root = bundle_root.resolve()
         self.modules: dict[str, Module] = {}
-        self.module_paths: dict[str, Path] = {}
         self.visiting: list[str] = []
 
-    def module_relative_path(self, path: Path) -> Path:
-        path = path.resolve()
-        try:
-            return path.relative_to(self.bundle_root)
-        except ValueError:
-            return path.relative_to(REPO_ROOT)
-
     def module_id(self, path: Path) -> str:
-        relative_path = self.module_relative_path(path)
-        if relative_path.name == "init.luau" and relative_path.parent != Path("."):
-            return relative_path.parent.as_posix()
-        return relative_path.as_posix()
-
-    def allowed_root_for(self, path: Path) -> Path:
-        path = path.resolve()
         try:
-            path.relative_to(self.bundle_root)
+            return path.relative_to(self.bundle_root).as_posix()
         except ValueError:
-            return REPO_ROOT
-        return self.bundle_root
-
-    def resolve_relative_base(self, requiring_path: Path, requested_path: str) -> Path:
-        if requiring_path.name == "init.luau":
-            return requiring_path.parent.parent / requested_path
-        return requiring_path.parent / requested_path
+            return path.relative_to(REPO_ROOT).as_posix()
 
     def resolve_require(self, requiring_path: Path, requested_path: str) -> Path:
         if is_relative_require(requested_path):
-            candidate = self.resolve_relative_base(requiring_path, requested_path)
-            allowed_root = self.allowed_root_for(requiring_path)
-            allowed_name = (
-                "the bundle being packaged"
-                if allowed_root == self.bundle_root
-                else "the repository root"
-            )
+            candidate = requiring_path.parent / requested_path
+            allowed_root = self.bundle_root
             containment_error = (
                 f"{self.module_id(requiring_path)}: require path resolves outside "
-                f"{allowed_name}: {requested_path}"
+                f"the bundle being packaged: {requested_path}"
             )
         elif is_repo_root_require(requested_path):
             candidate = REPO_ROOT / requested_path[1:]
@@ -279,6 +253,8 @@ class BundleBuilder:
                 f"{requested_path}"
             )
 
+        if candidate.suffix == "":
+            candidate = candidate.with_suffix(".luau")
         candidate = candidate.resolve()
 
         try:
@@ -286,35 +262,16 @@ class BundleBuilder:
         except ValueError as error:
             raise PackagingError(containment_error) from error
 
-        candidates = (
-            [candidate]
-            if candidate.suffix != ""
-            else [candidate.with_suffix(".luau"), candidate / "init.luau"]
-        )
-
-        for resolved_candidate in candidates:
-            if resolved_candidate.is_file():
-                return resolved_candidate
-
-        raise PackagingError(
-            f"{self.module_id(requiring_path)}: required file does not exist: "
-            f"{requested_path}"
-        )
-
-    def validate_module_path(self, module_id: str, path: Path) -> None:
-        existing_path = self.module_paths.get(module_id)
-        if existing_path is not None and existing_path != path:
+        if not candidate.is_file():
             raise PackagingError(
-                f"ambiguous bundled module id {module_id!r}: "
-                f"{self.module_relative_path(existing_path).as_posix()} and "
-                f"{self.module_relative_path(path).as_posix()}"
+                f"{self.module_id(requiring_path)}: required file does not exist: "
+                f"{requested_path}"
             )
-        self.module_paths[module_id] = path
+        return candidate
 
     def collect(self, path: Path) -> str:
         path = path.resolve()
         module_id = self.module_id(path)
-        self.validate_module_path(module_id, path)
 
         if module_id in self.visiting:
             cycle_start = self.visiting.index(module_id)

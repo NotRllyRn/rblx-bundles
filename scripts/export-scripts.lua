@@ -305,65 +305,6 @@ local function getFileNameWithoutExtension(path)
     return filename:match("(.+)%..+$") or filename
 end
 
-local function getLowercaseExtension(path)
-    local extension = path:match("%.([^./\\]+)$")
-    if not extension then
-        return ""
-    end
-
-    return string.lower(extension)
-end
-
-local function trim(value)
-    return value:match("^%s*(.-)%s*$") or ""
-end
-
-local function getParentDir(path)
-    return path:match("^(.*)/[^/]+$") or ""
-end
-
-local function splitPath(path)
-    local parts = {}
-    for part in path:gmatch("[^/]+") do
-        table.insert(parts, part)
-    end
-    return parts
-end
-
-local function getRelativePath(fromPath, toPath)
-    local fromParts = splitPath(getParentDir(fromPath))
-    local toParts = splitPath(toPath)
-    local commonLength = 0
-
-    while fromParts[commonLength + 1] and toParts[commonLength + 1]
-        and fromParts[commonLength + 1] == toParts[commonLength + 1] do
-        commonLength = commonLength + 1
-    end
-
-    local relativeParts = {}
-
-    for index = commonLength + 1, #fromParts do
-        table.insert(relativeParts, "..")
-    end
-
-    for index = commonLength + 1, #toParts do
-        table.insert(relativeParts, toParts[index])
-    end
-
-    local relativePath = table.concat(relativeParts, "/")
-    if relativePath == "" then
-        relativePath = "."
-    end
-
-    relativePath = relativePath:gsub("%.lua$", "")
-
-    if relativePath:sub(1, 1) ~= "." then
-        relativePath = "./" .. relativePath
-    end
-
-    return relativePath
-end
-
 local function isScript(instance)
     return SCRIPT_CLASSES[instance.ClassName] == true
 end
@@ -627,219 +568,7 @@ local function buildUniqueChildNames(children)
     return uniqueNames
 end
 
-local function resolveStaticRequireTarget(currentScript, expression, requireContext)
-    local value = trim(expression)
-    local current
-    local index
-
-    if value:match("^script[%s%._:]") or value == "script" then
-        current = currentScript
-        index = 7
-    elseif value:match("^game[%s%._:]") or value == "game" then
-        current = requireContext.rootInstance
-        index = 5
-    else
-        return nil
-    end
-
-    while current do
-        local remaining = value:sub(index)
-        if trim(remaining) == "" then
-            break
-        end
-
-        local dotToken = remaining:match("^%s*%.%s*([%a_][%w_]*)")
-        if dotToken then
-            index = index + remaining:match("^(%s*%.%s*[%a_][%w_]*)"):len()
-            if dotToken == "Parent" then
-                current = current.Parent
-            else
-                current = current:FindFirstChild(dotToken)
-            end
-        else
-            local getServiceCall, _, serviceName = remaining:match("^(%s*:%s*GetService%s*%(%s*([\"'])(.-)%2%s*%))")
-            if getServiceCall then
-                index = index + #getServiceCall
-                current = current:FindFirstChild(serviceName)
-            else
-                local waitCall, _, waitName = remaining:match("^(%s*:%s*WaitForChild%s*%(%s*([\"'])(.-)%2%s*%))")
-                if waitCall then
-                    index = index + #waitCall
-                    current = current:FindFirstChild(waitName)
-                else
-                    local findCall, _, findName = remaining:match("^(%s*:%s*FindFirstChild%s*%(%s*([\"'])(.-)%2%s*%))")
-                    if findCall then
-                        index = index + #findCall
-                        current = current:FindFirstChild(findName)
-                    else
-                        return nil
-                    end
-                end
-            end
-        end
-    end
-
-    return current
-end
-
-local function findRequireCallEnd(source, openParenIndex)
-    local depth = 1
-    local index = openParenIndex + 1
-    local quote = nil
-
-    while index <= #source do
-        local character = source:sub(index, index)
-
-        if quote then
-            if character == "\\" then
-                index = index + 2
-            elseif character == quote then
-                quote = nil
-                index = index + 1
-            else
-                index = index + 1
-            end
-        else
-            if character == "'" or character == "\"" then
-                quote = character
-                index = index + 1
-            elseif character == "(" then
-                depth = depth + 1
-                index = index + 1
-            elseif character == ")" then
-                depth = depth - 1
-                if depth == 0 then
-                    return index
-                end
-                index = index + 1
-            else
-                index = index + 1
-            end
-        end
-    end
-
-    return nil
-end
-
-local function rewriteRequireCalls(source, currentScript, requireContext)
-    local currentFilePath = requireContext.scriptPaths[currentScript]
-    if not currentFilePath then
-        return source
-    end
-
-    local parts = {}
-    local index = 1
-
-    while true do
-        local startIndex, openParenIndex = source:find("require%s*%(", index)
-        if not startIndex then
-            table.insert(parts, source:sub(index))
-            break
-        end
-
-        table.insert(parts, source:sub(index, startIndex - 1))
-
-        local closeParenIndex = findRequireCallEnd(source, openParenIndex)
-        if not closeParenIndex then
-            table.insert(parts, source:sub(startIndex))
-            break
-        end
-
-        local originalCall = source:sub(startIndex, closeParenIndex)
-        local expression = source:sub(openParenIndex + 1, closeParenIndex - 1)
-        local targetInstance = resolveStaticRequireTarget(currentScript, expression, requireContext)
-        local targetFilePath = targetInstance and requireContext.scriptPaths[targetInstance] or nil
-
-        if targetInstance and targetInstance.ClassName == "ModuleScript" and targetFilePath then
-            local relativePath = getRelativePath(currentFilePath, targetFilePath)
-            table.insert(parts, string.format('require("%s")', relativePath))
-        else
-            table.insert(parts, originalCall)
-        end
-
-        index = closeParenIndex + 1
-    end
-
-    return table.concat(parts)
-end
-
 local processScriptInstance
-local collectScriptPathInstance
-
-local function collectScriptPathList(instances, currentPath, requireContext, depth)
-    table.sort(instances, function(a, b)
-        local aIsScript = isScript(a)
-        local bIsScript = isScript(b)
-
-        if aIsScript ~= bIsScript then
-            return aIsScript
-        end
-
-        return a.Name < b.Name
-    end)
-
-    local uniqueNames = buildUniqueChildNames(instances)
-
-    for _, instance in ipairs(instances) do
-        collectScriptPathInstance(instance, currentPath, requireContext, depth, uniqueNames[instance])
-    end
-end
-
-local function collectScriptPathChildren(instance, currentPath, requireContext, depth)
-    local children = getSortedChildren(instance)
-    local uniqueNames = buildUniqueChildNames(children)
-
-    for _, child in ipairs(children) do
-        collectScriptPathInstance(child, currentPath, requireContext, depth, uniqueNames[child])
-    end
-end
-
-collectScriptPathInstance = function(instance, currentPath, requireContext, depth, resolvedName)
-    depth = depth or 0
-
-    if depth > 25 or shouldSkip(instance) then
-        return
-    end
-
-    local sanitizedName = resolvedName or sanitizePath(instance.Name)
-    if isScript(instance) then
-        local extension = CONFIG.scriptExtensions[instance.ClassName] or ".lua"
-        requireContext.scriptPaths[instance] = currentPath .. "/" .. sanitizedName .. extension
-
-        local children = instance:GetChildren()
-        if #children > 0 and hasDirectScriptChildren(instance) then
-            local scriptFolder = currentPath .. "/" .. sanitizedName .. "_contents"
-            collectScriptPathChildren(instance, scriptFolder, requireContext, depth + 1)
-        end
-
-        return
-    end
-
-    if not hasScriptsDeep(instance) then
-        return
-    end
-
-    collectScriptPathChildren(instance, currentPath .. "/" .. sanitizedName, requireContext, depth + 1)
-end
-
-local function processScriptList(instances, currentPath, stats, depth)
-    table.sort(instances, function(a, b)
-        local aIsScript = isScript(a)
-        local bIsScript = isScript(b)
-
-        if aIsScript ~= bIsScript then
-            return aIsScript
-        end
-
-        return a.Name < b.Name
-    end)
-
-    local uniqueNames = buildUniqueChildNames(instances)
-
-    for _, instance in ipairs(instances) do
-        processScriptInstance(instance, currentPath, stats, depth, uniqueNames[instance])
-    end
-end
 
 local function processScriptChildren(instance, currentPath, stats, depth)
     local children = getSortedChildren(instance)
@@ -869,9 +598,6 @@ processScriptInstance = function(instance, currentPath, stats, depth, resolvedNa
         local extension = CONFIG.scriptExtensions[instance.ClassName] or ".lua"
         local filePath = currentPath .. "/" .. sanitizedName .. extension
         local source = instance.Source or "-- No source code found"
-        if stats.requireContext then
-            source = rewriteRequireCalls(source, instance, stats.requireContext)
-        end
         local metadata = createScriptMetadata(instance)
         local header = generateScriptHeader(metadata)
 
@@ -958,47 +684,23 @@ local function createProjectInfo(outputDir, inputPath, options)
     fs.writeFile(outputDir .. "/project-info.lua", content)
 end
 
-local function exportScripts(inputData, inputPath, outputDir, options)
+local function exportScripts(dataModel, inputPath, outputDir, options)
     local stats = newScriptStats()
 
     ensureDir(outputDir)
 
-    if options.relativeFileRequire then
-        stats.requireContext = {
-            rootInstance = inputData.kind == "place" and inputData.dataModel or nil,
-            scriptPaths = {},
-        }
+    for _, serviceName in ipairs(CONFIG.services) do
+        local service = dataModel:FindFirstChild(serviceName)
+        if service and hasScriptsDeep(service) then
+            print(string.format("[scripts] Processing %s...", serviceName))
 
-        if inputData.kind == "place" then
-            for _, serviceName in ipairs(CONFIG.services) do
-                local service = inputData.dataModel:FindFirstChild(serviceName)
-                if service and hasScriptsDeep(service) then
-                    collectScriptPathChildren(service, outputDir .. "/" .. sanitizePath(serviceName), stats.requireContext, 0)
-                end
-            end
-        elseif #inputData.instances > 0 then
-            collectScriptPathList(inputData.instances, outputDir, stats.requireContext, 0)
+            local servicePath = outputDir .. "/" .. sanitizePath(serviceName)
+            ensureDir(servicePath)
+
+            processScriptChildren(service, servicePath, stats, 0)
+
+            stats.servicesProcessed = stats.servicesProcessed + 1
         end
-    end
-
-    if inputData.kind == "place" then
-        for _, serviceName in ipairs(CONFIG.services) do
-            local service = inputData.dataModel:FindFirstChild(serviceName)
-            if service and hasScriptsDeep(service) then
-                print(string.format("[scripts] Processing %s...", serviceName))
-
-                local servicePath = outputDir .. "/" .. sanitizePath(serviceName)
-                ensureDir(servicePath)
-
-                processScriptChildren(service, servicePath, stats, 0)
-
-                stats.servicesProcessed = stats.servicesProcessed + 1
-            end
-        end
-    elseif #inputData.instances > 0 then
-        print("[scripts] Processing model root...")
-        processScriptList(inputData.instances, outputDir, stats, 0)
-        stats.servicesProcessed = 1
     end
 
     createProjectInfo(outputDir, inputPath, options)
@@ -1116,7 +818,7 @@ local function writeJson(path, value, stats)
     return true
 end
 
-local function exportObjects(inputData, inputPath, outputDir, options)
+local function exportObjects(dataModel, inputPath, outputDir, options)
     local stats = newObjectStats()
     ensureDir(outputDir)
 
@@ -1136,75 +838,41 @@ local function exportObjects(inputData, inputPath, outputDir, options)
 
     local totalServices = 0
 
-    if inputData.kind == "place" then
-        for _, serviceName in ipairs(CONFIG.services) do
-            local service = inputData.dataModel:FindFirstChild(serviceName)
-            if service then
-                print(string.format("[objects] Processing %s...", serviceName))
+    for _, serviceName in ipairs(CONFIG.services) do
+        local service = dataModel:FindFirstChild(serviceName)
+        if service then
+            print(string.format("[objects] Processing %s...", serviceName))
 
-                local serviceData = {
-                    name = serviceName,
-                    class = service.ClassName,
-                    properties = extractProperties(service),
-                    children = {},
-                }
+            local serviceData = {
+                name = serviceName,
+                class = service.ClassName,
+                properties = extractProperties(service),
+                children = {},
+            }
 
-                for _, child in ipairs(service:GetChildren()) do
-                    local node = buildObjectTree(child, options, stats, 0)
-                    if node then
-                        table.insert(serviceData.children, node)
-                    end
+            for _, child in ipairs(service:GetChildren()) do
+                local node = buildObjectTree(child, options, stats, 0)
+                if node then
+                    table.insert(serviceData.children, node)
                 end
-
-                local outputFile = outputDir .. "/" .. sanitizePath(serviceName) .. ".json"
-                if writeJson(outputFile, serviceData, stats) then
-                    print(string.format("  [objects] %d top-level nodes -> %s", #serviceData.children, outputFile))
-                else
-                    print(string.format("  [objects] failed %s", outputFile))
-                end
-
-                table.insert(manifest.services, {
-                    name = serviceName,
-                    class = service.ClassName,
-                    topLevelNodes = #serviceData.children,
-                    file = sanitizePath(serviceName) .. ".json",
-                })
-
-                totalServices = totalServices + 1
             end
-        end
-    elseif #inputData.instances > 0 then
-        print("[objects] Processing model root...")
 
-        local modelData = {
-            name = getFileNameWithoutExtension(inputPath),
-            class = "ModelFile",
-            properties = {},
-            children = {},
-        }
-
-        for _, instance in ipairs(inputData.instances) do
-            local node = buildObjectTree(instance, options, stats, 0)
-            if node then
-                table.insert(modelData.children, node)
+            local outputFile = outputDir .. "/" .. sanitizePath(serviceName) .. ".json"
+            if writeJson(outputFile, serviceData, stats) then
+                print(string.format("  [objects] %d top-level nodes -> %s", #serviceData.children, outputFile))
+            else
+                print(string.format("  [objects] failed %s", outputFile))
             end
+
+            table.insert(manifest.services, {
+                name = serviceName,
+                class = service.ClassName,
+                topLevelNodes = #serviceData.children,
+                file = sanitizePath(serviceName) .. ".json",
+            })
+
+            totalServices = totalServices + 1
         end
-
-        local outputFile = outputDir .. "/Model.json"
-        if writeJson(outputFile, modelData, stats) then
-            print(string.format("  [objects] %d top-level nodes -> %s", #modelData.children, outputFile))
-        else
-            print(string.format("  [objects] failed %s", outputFile))
-        end
-
-        table.insert(manifest.services, {
-            name = modelData.name,
-            class = modelData.class,
-            topLevelNodes = #modelData.children,
-            file = "Model.json",
-        })
-
-        totalServices = 1
     end
 
     local classEntries = {}
@@ -1271,7 +939,6 @@ local function parseArgs(args)
         objectMode = "objects",
         maxDepth = 50,
         filters = {},
-        relativeFileRequire = false,
     }
 
     local index = 1
@@ -1313,9 +980,6 @@ local function parseArgs(args)
             index = index + 2
         elseif arg:sub(1, 14) == "--objects-dir=" then
             options.objectsDir = arg:sub(15)
-            index = index + 1
-        elseif arg == "--relative-file-require" then
-            options.relativeFileRequire = true
             index = index + 1
         elseif arg:sub(1, 2) ~= "--" then
             if not options.inputPath then
@@ -1359,7 +1023,7 @@ local function printUsage()
     print("Roblox Script Exporter")
     print("======================")
     print("Usage:")
-    print("  lune run export-scripts.lua <input.rbxl|input.rbxm> [output-dir] [options]")
+    print("  lune run export-scripts.lua <input.rbxl> [output-dir] [options]")
     print("")
     print("Options:")
     print("  --export <scripts|objects|both>   What to export (default: both)")
@@ -1368,18 +1032,17 @@ local function printUsage()
     print("  --filter <Class>                  Include only this class in object JSON")
     print("  --scripts-dir <dir>               Override the scripts output folder")
     print("  --objects-dir <dir>               Override the objects output folder")
-    print("  --relative-file-require           Rewrite resolvable module requires to relative file paths")
     print("")
     print("Examples:")
     print("  lune run export-scripts.lua MyGame.rbxl")
-    print("  lune run export-scripts.lua MyModel.rbxm --export scripts")
+    print("  lune run export-scripts.lua MyGame.rbxl --export scripts")
     print("  lune run export-scripts.lua MyGame.rbxl --export objects --mode all")
     print("  lune run export-scripts.lua MyGame.rbxl export-output")
     print("    # combined export now writes both scripts and objects into export-output/")
     print("  lune run export-scripts.lua MyGame.rbxl --scripts-dir MyGame-scripts --objects-dir MyGame-objects")
 end
 
-local function loadInput(inputPath)
+local function loadPlace(inputPath)
     local fileContent
     local ok, err = pcall(function()
         fileContent = fs.readFile(inputPath)
@@ -1387,23 +1050,6 @@ local function loadInput(inputPath)
 
     if not ok then
         return nil, "Cannot read file: " .. tostring(err)
-    end
-
-    local extension = getLowercaseExtension(inputPath)
-    if extension == "rbxm" then
-        local instances
-        ok, err = pcall(function()
-            instances = roblox.deserializeModel(fileContent)
-        end)
-
-        if not ok then
-            return nil, "Cannot deserialize model: " .. tostring(err)
-        end
-
-        return {
-            kind = "model",
-            instances = instances,
-        }
     end
 
     local dataModel
@@ -1415,10 +1061,7 @@ local function loadInput(inputPath)
         return nil, "Cannot deserialize place: " .. tostring(err)
     end
 
-    return {
-        kind = "place",
-        dataModel = dataModel,
-    }
+    return dataModel
 end
 
 local function main(args)
@@ -1450,7 +1093,6 @@ local function main(args)
     print(string.format("Export:  %s", options.exportTarget))
     if scriptsOutput then
         print(string.format("Scripts: %s", scriptsOutput))
-        print(string.format("RelReq:  %s", tostring(options.relativeFileRequire)))
     end
     if objectsOutput then
         print(string.format("Objects: %s", objectsOutput))
@@ -1462,19 +1104,19 @@ local function main(args)
     end
     print()
 
-    local inputData, err = loadInput(options.inputPath)
-    if not inputData then
-        print("Failed to load input: " .. tostring(err))
+    local dataModel, err = loadPlace(options.inputPath)
+    if not dataModel then
+        print("Failed to load place: " .. tostring(err))
         return
     end
 
     if options.exportTarget == "scripts" or options.exportTarget == "both" then
-        exportScripts(inputData, options.inputPath, scriptsOutput, options)
+        exportScripts(dataModel, options.inputPath, scriptsOutput, options)
         print()
     end
 
     if options.exportTarget == "objects" or options.exportTarget == "both" then
-        exportObjects(inputData, options.inputPath, objectsOutput, options)
+        exportObjects(dataModel, options.inputPath, objectsOutput, options)
         print()
     end
 
