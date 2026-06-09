@@ -1,4 +1,4 @@
-# rblx-exploits
+# rblx-bundles
 A collection of Roblox test bundles proofs of concept created for defensive security review.
 
 # Information
