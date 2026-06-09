@@ -1,6 +1,6 @@
---// test script
+--// test file
 
---// this can be a random script that does things
+--// this can be a random file that does things
 
 print("Hello World")
 
