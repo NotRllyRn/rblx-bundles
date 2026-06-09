@@ -32,4 +32,4 @@ packaged-bundles/
 .DS_Store
 
 # vendors
-vendor/
+vendors/
