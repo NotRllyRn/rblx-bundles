@@ -3,3 +3,4 @@ Roblox documentation: https://github.com/Roblox/creator-docs
 Roblox website (same as Roblox Documentation): https://create.roblox.com/docs
 Unified Naming Convention: https://github.com/sUNC-Utilities/docs.sunc.su
 Luau.org documenation: https://luau.org/getting-started/
+Fusion UI documentation: https://elttob.uk/Fusion/0.3/api-reference/

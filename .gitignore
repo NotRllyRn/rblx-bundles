@@ -30,3 +30,6 @@ packaged-bundles/
 
 # macos things
 .DS_Store
+
+# vendors
+vendor/

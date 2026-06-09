@@ -16,4 +16,10 @@ local module = require("./module")
 --// do stuff
 module.RandomInstance.Color = Color3.new()
 
+--// example of requiring fusion
+
+local Fusion = require("@vendor/Fusion")
+
+print(`Local copy of Fusion, version: {Fusion.version.major}.{Fusion.version.minor}`)
+
 return true
