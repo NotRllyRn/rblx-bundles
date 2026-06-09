@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 BUNDLES_DIR = REPO_ROOT / "bundles"
 OUTPUT_DIR = REPO_ROOT / "packaged-bundles"
 HELPER_PATH = REPO_ROOT / "scripts/main-helper.luau"
@@ -179,10 +179,8 @@ def find_require_calls(source: str, display_path: str) -> list[RequireCall]:
 
             argument = skip_trivia(source, open_paren + 1)
             if argument >= len(source) or source[argument] not in ("\"", "'"):
-                line = source.count("\n", 0, cursor) + 1
-                raise PackagingError(
-                    f"{display_path}:{line}: require must use a quoted path string"
-                )
+                cursor = argument
+                continue
 
             requested_path, string_end = parse_path_string(source, argument)
             close_paren = skip_trivia(source, string_end)

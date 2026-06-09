@@ -51,3 +51,8 @@ under ReplicatedStorage.Settings, there is a folder for stock, which allows you 
 
 the sofa for resting is approximately at -8.62709522, 35.5299988, -23.5437546. it's a model instance with the name "Model" and has a "MeshPart" and 2 Seat instances called "Sofa".
 Find the sofa on startup using this information. use seat:Sit() to sit in the chair once walking to it. Try each instance once if the other one is already occupied. use Seat.Occupant to check.
+
+I could not find where the time of the day is stored on the client, so you will need to index one of the "time2" in workspace.
+there are 6 of them. They do not change name. the first one is called "Time" and they then use numbers all the way up to 6. 
+There is a textlabel under the children inside of these time instances. You will have to parse the information however because they format it by 12h and AM or PM. 
+
