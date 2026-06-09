@@ -41,11 +41,12 @@ local c = require("somefolder/file")
             ["@helpers/shared/tool", "module", "somefolder/file"],
         )
 
-    def test_rejects_dynamic_require(self) -> None:
-        with self.assertRaisesRegex(
-            package_bundle.PackagingError, "quoted path string"
-        ):
-            package_bundle.find_require_calls("require(module_name)", "main.luau")
+    def test_ignores_dynamic_require(self) -> None:
+        calls = package_bundle.find_require_calls(
+            "local value = require(module_name)", "main.luau"
+        )
+
+        self.assertEqual(calls, [])
 
     def test_rejects_absolute_require(self) -> None:
         with self.assertRaisesRegex(

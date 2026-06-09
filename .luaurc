@@ -1,7 +1,8 @@
 {
   "aliases": {
     "helpers": "helpers",
-    "bundles": "bundles"
+    "bundles": "bundles",
+    "vendor": "vendor"
   },
   "languageMode": "nonstrict"
 } 

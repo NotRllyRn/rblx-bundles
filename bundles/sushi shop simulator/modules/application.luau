@@ -12,6 +12,8 @@ local RestockService = require("./restock-service")
 local TipService = require("./tip-service")
 local UiService = require("./ui-service")
 local WorkService = require("./work-service")
+local MonitorController = require("./monitor-controller")
+local MonitorUi = require("./monitor-ui")
 
 local Application = {}
 Application.__index = Application
@@ -53,19 +55,40 @@ function Application.new()
 		tipService:tryClaimNearby(position)
 	end)
 
-	return setmetatable({
+	local application = setmetatable({
 		settings = Settings,
 		log = log,
 		refs = refs,
 		state = state,
 		movement = movement,
+		recipeData = recipeData,
 		world = world,
 		occupancy = occupancy,
+		recipeService = recipeService,
 		restockService = restockService,
 		tipService = tipService,
 		uiService = uiService,
 		workService = workService,
 	}, Application)
+
+	movement:setStatusCallback(function(position)
+		state:setTelemetry(
+			"lastMovementTarget",
+			string.format("%.1f, %.1f, %.1f", position.X, position.Y, position.Z)
+		)
+	end)
+
+	application.logUnsubscribe = log:subscribe(function(entry)
+		if entry.level == "ACTION" then
+			state:setTelemetry("lastAction", entry.message)
+		elseif entry.level == "WARN" then
+			state:setTelemetry("lastFailure", entry.message)
+		end
+	end)
+	application.monitorController = MonitorController.new(application)
+	application.monitorUi = MonitorUi.new(application.monitorController, log)
+
+	return application
 end
 
 function Application:_connectValue(valueObject)
@@ -126,6 +149,10 @@ function Application:_discoverWorld()
 	self.state.tipJar = worldState.tipJar
 	self.occupancy:setStations(worldState.cookStations, worldState.sinks)
 	self.tipService:setTipJar(worldState.tipJar)
+	self.state:setTelemetry(
+		"lastWorldRefresh",
+		`{#worldState.cookStations} cook, {#worldState.sinks} sink, {#worldState.sofaSeats} sofa`
+	)
 
 	for _, seat in worldState.sofaSeats do
 		Signals.connect(seat:GetPropertyChangedSignal("Occupant"), function()
@@ -208,6 +235,7 @@ function Application:_restForEnergy()
 	return self.workService:rest(function()
 		return self.refs.energy.Value <= self.settings.Energy.Resume
 			and not self.refs.gameover.Value
+			and not self.state.controls.paused
 	end)
 end
 
@@ -217,48 +245,78 @@ function Application:_restUntilWorkAppears()
 			and self.refs.dirtyPlates.Value <= 0
 			and not self.restockService:hasActionableRestock()
 			and not self.refs.gameover.Value
+			and not self.state.controls.paused
 	end)
 end
 
 function Application:_runNextTask()
+	if self.state.controls.paused then
+		self.state:setTelemetry("currentTask", "Paused")
+		self.state:setTelemetry("lastDecision", "Waiting for the operator to resume")
+		return false
+	end
+
 	if self.refs.gameover.Value or not self.movement:isReady() then
+		self.state:setTelemetry("currentTask", "Unavailable")
+		self.state:setTelemetry(
+			"lastDecision",
+			self.refs.gameover.Value and "Game over" or "Character is not ready"
+		)
 		return false
 	end
 
 	if self.uiService:closeBlockingGui() then
+		self.state:setTelemetry("currentTask", "Clearing game UI")
+		self.state:setTelemetry("lastDecision", "Closed a blocking game dialog")
 		return true
 	end
 
 	if self.workService:isBusy() then
+		self.state:setTelemetry("currentTask", "Working")
+		self.state:setTelemetry("lastDecision", "Waiting for the current character action")
 		return false
 	end
 
 	if self.refs.energy.Value <= self.settings.Energy.Minimum then
+		self.state:setTelemetry("currentTask", "Resting")
+		self.state:setTelemetry("lastDecision", "Energy reached the configured minimum")
 		return self:_restForEnergy()
 	end
 
+	self.state:setTelemetry("currentTask", "Checking stock")
 	if self.restockService:restockNext() then
+		self.state:setTelemetry("lastDecision", "Restocked the lowest actionable ingredient")
 		return true
 	end
 
 	if self.world:isShopOpen() then
 		if self.refs.plates.Value <= 0 and self.refs.dirtyPlates.Value > 0 then
+			self.state:setTelemetry("currentTask", "Washing")
+			self.state:setTelemetry("lastDecision", "No clean plates remain")
 			return self.workService:washDish()
 		end
 
+		self.state:setTelemetry("currentTask", "Cooking")
+		self.state:setTelemetry("lastDecision", "Shop is open and a recipe may be craftable")
 		if self.refs.plates.Value > 0 and self.workService:cook() then
 			return true
 		end
 	else
 		if self.refs.dirtyPlates.Value > 0 and self.workService:washDish() then
+			self.state:setTelemetry("currentTask", "Washing")
+			self.state:setTelemetry("lastDecision", "Cleaning dirty plates while the shop is closed")
 			return true
 		end
 
+		self.state:setTelemetry("currentTask", "Night rest")
+		self.state:setTelemetry("lastDecision", "No closed-shop work is actionable")
 		if self:_restUntilWorkAppears() then
 			return true
 		end
 	end
 
+	self.state:setTelemetry("currentTask", "Claiming tips")
+	self.state:setTelemetry("lastDecision", "No higher-priority work is actionable")
 	return self.workService:claimTips()
 end
 
@@ -268,6 +326,12 @@ function Application:run()
 	self:_discoverWorld()
 	self:_connectWakeSources()
 	self.occupancy:start()
+	local monitorMounted, monitorProblem = pcall(function()
+		self.monitorUi:mount()
+	end)
+	if not monitorMounted then
+		self.log:warn(`Monitor UI failed to start: {monitorProblem}`)
+	end
 	self.log:info("Automation loop started")
 
 	while shared.sushi_shop_simulator_loop ~= false do
@@ -278,10 +342,12 @@ function Application:run()
 		end)
 
 		if not success then
+			self.state:setTelemetry("lastFailure", tostring(didWork))
 			self.log:warn(`Task failed: {didWork}`)
 		end
 
 		if success and didWork then
+			self.state:setTelemetry("lastSuccess", self.state.telemetry.currentTask)
 			self.state:wake()
 		else
 			task.delay(self.settings.Timing.IdleRetry, function()
@@ -292,6 +358,11 @@ function Application:run()
 
 	self.occupancy:stop()
 	self.movement:cancelCurrentMove()
+	self.monitorUi:destroy()
+	self.monitorController:destroy()
+	if self.logUnsubscribe then
+		self.logUnsubscribe()
+	end
 	Signals.disconnectAll(self.state.worldConnections)
 	Signals.disconnectAll(self.state.characterConnections)
 	Signals.disconnectAll(self.state.connections)

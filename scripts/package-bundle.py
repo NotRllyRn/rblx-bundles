@@ -179,7 +179,9 @@ def find_require_calls(source: str, display_path: str) -> list[RequireCall]:
 
             argument = skip_trivia(source, open_paren + 1)
             if argument >= len(source) or source[argument] not in ("\"", "'"):
-                cursor = argument
+                # Runtime Roblox modules may require Instance values. They are not
+                # bundle dependencies, so preserve those calls unchanged.
+                cursor = open_paren + 1
                 continue
 
             requested_path, string_end = parse_path_string(source, argument)
