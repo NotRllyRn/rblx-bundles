@@ -8,7 +8,6 @@ function State.new()
 		connections = {},
 		characterConnections = {},
 		worldConnections = {},
-		listeners = {},
 		character = nil,
 		humanoid = nil,
 		cookStations = {},
@@ -17,48 +16,12 @@ function State.new()
 		tipJar = nil,
 		blacklist = {},
 		lastRecipeSwitch = 0,
-		controls = {
-			paused = false,
-		},
-		telemetry = {
-			currentTask = "Starting",
-			lastDecision = "Waiting for initialization",
-			lastAction = nil,
-			lastSuccess = nil,
-			lastFailure = nil,
-			lastMovementTarget = nil,
-			lastSnapshotAt = os.clock(),
-		},
 	}, State)
-end
-
-function State:_notify()
-	for callback in self.listeners do
-		task.spawn(callback)
-	end
 end
 
 function State:wake()
 	self.dirty = true
 	self.wakeEvent:Fire()
-	self:_notify()
-end
-
-function State:subscribe(callback)
-	self.listeners[callback] = true
-	return function()
-		self.listeners[callback] = nil
-	end
-end
-
-function State:setTelemetry(key, value)
-	if self.telemetry[key] == value then
-		return
-	end
-
-	self.telemetry[key] = value
-	self.telemetry.lastSnapshotAt = os.clock()
-	self:_notify()
 end
 
 function State:waitForWork()

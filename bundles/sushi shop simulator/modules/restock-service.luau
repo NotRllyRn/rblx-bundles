@@ -62,26 +62,6 @@ function RestockService:hasActionableRestock()
 	return false
 end
 
-function RestockService:getPreview()
-	local fallback = nil
-	for _, candidate in self:_getCandidates() do
-		local _, paymentSource = self:_getPaymentCode(candidate)
-		local preview = {
-			name = candidate.name,
-			current = candidate.valueObject.Value,
-			cost = candidate.cost,
-			paymentSource = paymentSource,
-			actionable = paymentSource ~= nil,
-		}
-		if paymentSource then
-			return preview
-		end
-		fallback = fallback or preview
-	end
-
-	return fallback
-end
-
 function RestockService:restockNext()
 	for _, candidate in self:_getCandidates() do
 		local paymentCode, paymentSource = self:_getPaymentCode(candidate)

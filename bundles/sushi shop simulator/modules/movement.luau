@@ -28,7 +28,6 @@ function Movement.new(config, log)
 		rootPart = nil,
 		moveId = 0,
 		traversalCallback = nil,
-		statusCallback = nil,
 	}, Movement)
 end
 
@@ -41,10 +40,6 @@ end
 
 function Movement:setTraversalCallback(callback)
 	self.traversalCallback = callback
-end
-
-function Movement:setStatusCallback(callback)
-	self.statusCallback = callback
 end
 
 function Movement:isReady()
@@ -187,9 +182,6 @@ function Movement:moveToTarget(target, arrivalRadius, shouldContinue)
 	end
 
 	local destination = getPosition(target)
-	if self.statusCallback then
-		self.statusCallback(destination)
-	end
 	local radius = arrivalRadius or self.config.ArrivalRadius
 	self.moveId += 1
 	local moveId = self.moveId
